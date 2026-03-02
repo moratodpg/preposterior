@@ -1,4 +1,3 @@
-import itertools
 import os
 
 import numpy as np
@@ -24,17 +23,42 @@ def load_models(path):
     )
 
 
+def pointwise_prune(vectors, actions):
+    """Remove vectors pointwise dominated by any other in the set.
+
+    v_i is removed if there exists v_j such that v_j[s] >= v_i[s] for all s
+    and v_j[s] > v_i[s] for at least one s.  O(M^2 * S) but fully vectorised
+    — much cheaper than an LP solve.
+    """
+    if len(vectors) <= 1:
+        return vectors, actions
+
+    keep = np.ones(len(vectors), dtype=bool)
+    for i in range(len(vectors)):
+        if not keep[i]:
+            continue
+        diff = vectors - vectors[i]                          # (M, S)
+        dominated = np.all(diff >= 0, axis=1) & np.any(diff > 0, axis=1)
+        dominated[i] = False
+        if dominated.any():
+            keep[i] = False
+
+    return vectors[keep], actions[keep]
+
+
 def lp_prune(vectors, actions, tol=1e-8):
     """LP-based upper-convex-hull pruning.
 
-    For each candidate vector v_i, solve:
+    Applies pointwise_prune as a fast pre-filter, then for each remaining
+    candidate v_i solves:
         maximize  ε
         s.t.  b · (v_i − v_j) ≥ ε   ∀ j ≠ i
               Σ b_k = 1,  b_k ≥ 0
 
-    Keep v_i only if the optimal ε > tol.
-    One sequential pass suffices.
+    Keep v_i only if the optimal ε > tol.  One sequential pass suffices.
     """
+    vectors, actions = pointwise_prune(vectors, actions)
+
     S = vectors.shape[1]
     survivors = list(range(len(vectors)))
     i = 0
@@ -85,39 +109,65 @@ def lp_prune(vectors, actions, tol=1e-8):
 
 
 def backup(prev_vectors, transition, observations, reward):
-    """One backward-induction step.
+    """One backward-induction step with incremental pruning.
 
-    For every action a and every combination c ∈ {0,…,|Γ|−1}^Z:
-        α[s] = R[a, s] + Σ_z  (T[a] @ (O[a, z] ⊙ Γ[c_z]))[s]
+    Instead of enumerating all A * N^Z combinations up front, processes one
+    observation at a time and prunes after each cross-product step:
+
+        for each action a:
+            set ← {R[a] + T[a] @ (O[a,0] ⊙ γ)  :  γ ∈ Γ}   # N vectors
+            for z = 1 … Z-1:
+                set ← lp_prune({v + T[a] @ (O[a,z] ⊙ γ)  :  v ∈ set, γ ∈ Γ})
+
+    The pruned per-action sets are unioned and returned for a final cross-action
+    lp_prune in backward_induction.
 
     Parameters
     ----------
-    prev_vectors : (N, S)  alpha-vectors from the next timestep
+    prev_vectors : (N, S)
     transition   : (A, S, S)
     observations : (A, Z, S)
     reward       : (A, S)
 
     Returns
     -------
-    raw_vectors : (A * N^Z, S)
-    raw_actions : (A * N^Z,)  integer action indices
+    vectors : (M, S)   partially pruned candidates (one set per action, unioned)
+    actions : (M,)     integer action indices
     """
-    A = transition.shape[0]
+    A, S, _ = transition.shape
     Z = observations.shape[1]
-    N = prev_vectors.shape[0]
 
-    raw_vectors = []
-    raw_actions = []
+    all_vectors = []
+    all_actions = []
 
     for a in range(A):
-        for c in itertools.product(range(N), repeat=Z):
-            alpha = reward[a].astype(float).copy()
-            for z in range(Z):
-                alpha += transition[a] @ (observations[a, z] * prev_vectors[c[z]])
-            raw_vectors.append(alpha)
-            raw_actions.append(a)
+        # contrib[z] shape (N, S): T[a] @ (O[a,z] ⊙ γ_n) for each n
+        # = (O[a,z] * prev_vectors) @ T[a].T  (vectorised over N)
+        contrib = [
+            (observations[a, z] * prev_vectors) @ transition[a].T
+            for z in range(Z)
+        ]
 
-    return np.array(raw_vectors), np.array(raw_actions)
+        # Initialise with z=0
+        N = len(prev_vectors)
+        intermediate = reward[a] + contrib[0]           # (N, S)
+        int_actions  = np.full(N, a, dtype=int)
+        intermediate, int_actions = lp_prune(intermediate, int_actions)
+
+        # Cross-product + prune for z = 1 … Z-1
+        for z in range(1, Z):
+            M = len(intermediate)
+            # All (M * N) pairwise sums, shape (M*N, S)
+            candidates = (
+                intermediate[:, np.newaxis, :] + contrib[z][np.newaxis, :, :]
+            ).reshape(M * len(prev_vectors), S)
+            cand_actions = np.full(len(candidates), a, dtype=int)
+            intermediate, int_actions = lp_prune(candidates, cand_actions)
+
+        all_vectors.append(intermediate)
+        all_actions.append(int_actions)
+
+    return np.vstack(all_vectors), np.concatenate(all_actions)
 
 
 def backward_induction(models_path, n_timesteps, output_path):
@@ -171,6 +221,6 @@ def backward_induction(models_path, n_timesteps, output_path):
 
 if __name__ == "__main__":
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    models_path = os.path.join(script_dir, "models.npz")
-    output_path = os.path.join(script_dir, "alpha_vectors.npz")
-    backward_induction(models_path, n_timesteps=2, output_path=output_path)
+    models_path = os.path.join(script_dir, "model_simplified_fatigue.npz")
+    output_path = os.path.join(script_dir, "alpha_vector_simplified_fatigue.npz")
+    backward_induction(models_path, n_timesteps=20, output_path=output_path)
