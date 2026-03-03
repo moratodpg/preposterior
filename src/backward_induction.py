@@ -253,8 +253,8 @@ def backward_induction(models_path, n_timesteps, output_path, prune_fn):
 
 if __name__ == "__main__":
     script_dir  = os.path.dirname(os.path.abspath(__file__))
-    models_path = os.path.join(script_dir, "model_simplified_fatigue.npz")
-    output_path = os.path.join(script_dir, "alpha_vector_simplified_fatigue.npz")
+    models_path = os.path.join(script_dir, "model_fatigue.npz")
+    output_path = os.path.join(script_dir, "alpha_vector_fatigue.npz")
 
     # ── Pruning method ────────────────────────────────────────────────────────
     # lp_prune_sequential : standard sequential LP pass.
@@ -263,8 +263,8 @@ if __name__ == "__main__":
     # lp_prune_certified  : sample-based pre-filter + LP only for uncertain
     #                       vectors. Also exact. Faster for large sets.
     #
-    prune_fn = lp_prune_certified   # ← change here to switch methods
+    prune_fn = lp_prune_sequential   # ← change here to switch methods
     # ─────────────────────────────────────────────────────────────────────────
 
-    backward_induction(models_path, n_timesteps=20, output_path=output_path,
+    backward_induction(models_path, n_timesteps=30, output_path=output_path,
                        prune_fn=prune_fn)
