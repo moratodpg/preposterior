@@ -63,11 +63,16 @@ reward = np.array([
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 output_path = os.path.join(script_dir, "model_simplified_fatigue.npz")
+
+# Initial belief: structure starts in the healthy state (state 0) with certainty
+initial_belief = np.array([1.0, 0.0, 0.0])
+
 np.savez(output_path, transition=transition, observations=observations,
-         reward=reward, action_names=action_names)
+         reward=reward, action_names=action_names, initial_belief=initial_belief)
 
 print(f"Saved {output_path}")
-print(f"  transition:   {transition.shape}")
-print(f"  observations: {observations.shape}")
-print(f"  reward:       {reward.shape}")
-print(f"  action_names: {action_names}")
+print(f"  transition:    {transition.shape}")
+print(f"  observations:  {observations.shape}")
+print(f"  reward:        {reward.shape}")
+print(f"  action_names:  {action_names}")
+print(f"  initial_belief:{initial_belief}")

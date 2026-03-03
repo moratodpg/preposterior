@@ -543,13 +543,8 @@ if __name__ == "__main__":
     models_path = os.path.join(script_dir, "model_simplified_fatigue.npz")
     output_path = os.path.join(script_dir, "alpha_vector_pbvi_simplified_fatigue.npz")
 
-    # Load model to infer state-space size for the initial belief
-    _data = np.load(models_path, allow_pickle=True)
-    S     = _data["transition"].shape[1]
-
-    # Uniform initial belief — replace with domain-specific prior if desired
-    initial_belief = np.ones(S) / S
-    # initial_belief = np.array([0.95, 0.05, 0])
+    _data          = np.load(models_path, allow_pickle=True)
+    initial_belief = _data["initial_belief"]
 
     n_trajectories = 10_000
 
