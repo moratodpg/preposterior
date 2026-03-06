@@ -63,8 +63,8 @@ def collect_beliefs(b0, n_trajectories, n_timesteps, transition, observations, r
     Returns
     -------
     beliefs_per_t : list of length T, each element is an ndarray (n_t, S)
-                    with the unique belief points reachable at that step.
-                    beliefs_per_t[T-1] is always [b0] (terminal placeholder).
+                    with the deduplicated belief points reached at that step,
+                    including t = T-1 (the beliefs at the last decision point).
     """
     A = transition.shape[0]
     Z = observations.shape[1]
@@ -101,8 +101,10 @@ def collect_beliefs(b0, n_trajectories, n_timesteps, transition, observations, r
 
         trajs = new_trajs
 
-    # Terminal step: just keep initial belief as placeholder (no backup needed)
-    beliefs_per_t[n_timesteps - 1] = b0[np.newaxis, :]
+    # Store the actual beliefs reached at t = T-1.
+    # These are still needed as backup targets; the zero terminal *value* is
+    # handled separately by initialising gamma = zeros in the solver.
+    beliefs_per_t[n_timesteps - 1] = np.unique(trajs, axis=0)
 
     return beliefs_per_t
 
@@ -161,7 +163,7 @@ def collect_beliefs_greedy(b0, n_trajectories, n_timesteps, transition,
 
         trajs = new_trajs
 
-    beliefs_per_t[n_timesteps - 1] = b0[np.newaxis, :]
+    beliefs_per_t[n_timesteps - 1] = np.unique(trajs, axis=0)
     return beliefs_per_t
 
 
